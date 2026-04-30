@@ -1,0 +1,54 @@
+{
+  "name": "@edithly/file-viewer",
+  "version": "1.0.0",
+  "description": "React file viewer component for rendering common file types in the browser.",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js",
+      "import": "./dist/index.mjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts --clean",
+    "dev": "tsup src/index.ts --format esm --dts --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "react",
+    "file-viewer",
+    "pdf-viewer",
+    "markdown-viewer",
+    "csv-viewer"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "dependencies": {
+    "papaparse": "^5.5.3",
+    "pdfjs-dist": "^5.4.296",
+    "prismjs": "^1.30.0",
+    "react-markdown": "^10.1.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@types/papaparse": "^5.3.16",
+    "@types/prismjs": "^1.26.5",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3"
+  }
+}
