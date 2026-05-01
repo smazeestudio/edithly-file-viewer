@@ -1,7 +1,13 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
 import type { FileKind, FileViewerProps, ViewerComponentProps } from "../types";
 import { detectFileType } from "../utils/detectFileType";
+import {
+  clearSearchMatches,
+  collectSearchRoots,
+  createSearchMatches,
+  setActiveSearchMatch,
+} from "./search";
 import { UnsupportedViewer } from "./UnsupportedViewer";
 import { getPanelStyle, getViewerStyle, getMutedColor } from "./shared";
 
@@ -59,9 +65,13 @@ export function FileViewer({
   onTextSelect,
 }: FileViewerProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const type = detectFileType(fileName);
   const style = getViewerStyle(theme, height);
   const Viewer = viewerMap[type] ?? UnsupportedViewer;
+  const [searchQuery, setSearchQuery] = useState("");
+  const [matchCount, setMatchCount] = useState(0);
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
 
   useEffect(() => {
     if (!onTextSelect) {
@@ -101,26 +111,250 @@ export function FileViewer({
     };
   }, [fileId, fileName, onTextSelect]);
 
+  useEffect(() => {
+    setSearchQuery("");
+    setMatchCount(0);
+    setActiveMatchIndex(0);
+  }, [fileId, fileName, src]);
+
+  useEffect(() => {
+    const container = contentRef.current;
+    if (!container) {
+      return;
+    }
+    const searchContainer = container;
+
+    let disposed = false;
+    let animationFrame = 0;
+    let observer: MutationObserver | null = null;
+    const iframeCleanups: Array<() => void> = [];
+
+    function clearIFrameListeners() {
+      while (iframeCleanups.length > 0) {
+        iframeCleanups.pop()?.();
+      }
+    }
+
+    function scheduleSync() {
+      observer?.disconnect();
+      clearIFrameListeners();
+      cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        if (disposed) {
+          return;
+        }
+
+        syncSearch();
+        observeMutations();
+      });
+    }
+
+    function observeMutations() {
+      observer?.disconnect();
+      clearIFrameListeners();
+
+      observer = new MutationObserver(() => {
+        scheduleSync();
+      });
+      observer.observe(searchContainer, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+
+      for (const iframe of searchContainer.querySelectorAll("iframe")) {
+        const onLoad = () => {
+          scheduleSync();
+        };
+
+        iframe.addEventListener("load", onLoad);
+        iframeCleanups.push(() => {
+          iframe.removeEventListener("load", onLoad);
+        });
+      }
+    }
+
+    function syncSearch() {
+      const roots = collectSearchRoots(searchContainer);
+      clearSearchMatches(roots);
+
+      const normalizedQuery = searchQuery.trim();
+      if (!normalizedQuery) {
+        if (matchCount !== 0) {
+          setMatchCount(0);
+        }
+        if (activeMatchIndex !== 0) {
+          setActiveMatchIndex(0);
+        }
+        return;
+      }
+
+      const matches = createSearchMatches(roots, normalizedQuery, theme);
+      const resolvedIndex = matches.length === 0 ? 0 : Math.min(activeMatchIndex, matches.length - 1);
+
+      if (matchCount !== matches.length) {
+        setMatchCount(matches.length);
+      }
+      if (activeMatchIndex !== resolvedIndex) {
+        setActiveMatchIndex(resolvedIndex);
+      }
+      if (matches.length > 0) {
+        setActiveSearchMatch(matches, resolvedIndex, theme);
+      }
+    }
+
+    syncSearch();
+    observeMutations();
+
+    return () => {
+      disposed = true;
+      cancelAnimationFrame(animationFrame);
+      observer?.disconnect();
+      clearIFrameListeners();
+      clearSearchMatches(collectSearchRoots(searchContainer));
+    };
+  }, [activeMatchIndex, fileId, fileName, matchCount, searchQuery, src, theme]);
+
+  const hasSearchQuery = searchQuery.trim().length > 0;
+  const canNavigateMatches = hasSearchQuery && matchCount > 0;
+
   return (
     <div ref={rootRef} style={getPanelStyle(theme)}>
-      <Suspense
-        fallback={
-          <div
-            style={{
-              ...style,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: getMutedColor(theme),
-            }}
-          >
-            Loading viewer...
-          </div>
-        }
+      <div
+        data-file-viewer-search-ignore="true"
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          alignItems: "center",
+          gap: 12,
+          padding: "12px 16px",
+          borderBottom: `1px solid ${theme === "dark" ? "#334155" : "#e2e8f0"}`,
+          backgroundColor: theme === "dark" ? "#0f172a" : "#ffffff",
+        }}
       >
-        <Viewer src={src} fileName={fileName} height={height} theme={theme} style={style} />
-      </Suspense>
+        <label
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flex: "1 1 280px",
+            minWidth: 220,
+            fontSize: 13,
+            color: getMutedColor(theme),
+          }}
+        >
+          Search
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+              setActiveMatchIndex(0);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && matchCount > 0) {
+                event.preventDefault();
+                setActiveMatchIndex((current) => {
+                  if (event.shiftKey) {
+                    return (current - 1 + matchCount) % matchCount;
+                  }
+                  return (current + 1) % matchCount;
+                });
+              }
+            }}
+            placeholder="Search this file"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              border: `1px solid ${theme === "dark" ? "#334155" : "#cbd5e1"}`,
+              borderRadius: 8,
+              padding: "8px 10px",
+              backgroundColor: theme === "dark" ? "#111827" : "#ffffff",
+              color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+            }}
+          />
+        </label>
+
+        <div
+          style={{
+            minWidth: 92,
+            textAlign: "right",
+            fontSize: 13,
+            color: getMutedColor(theme),
+          }}
+        >
+          {hasSearchQuery ? `${matchCount === 0 ? 0 : activeMatchIndex + 1} / ${matchCount}` : "0 / 0"}
+        </div>
+
+        <ToolbarButton
+          label="Up"
+          disabled={!canNavigateMatches}
+          onClick={() =>
+            setActiveMatchIndex((current) => (current - 1 + matchCount) % matchCount)
+          }
+          theme={theme}
+        />
+        <ToolbarButton
+          label="Down"
+          disabled={!canNavigateMatches}
+          onClick={() => setActiveMatchIndex((current) => (current + 1) % matchCount)}
+          theme={theme}
+        />
+      </div>
+
+      <div ref={contentRef} style={{ flex: 1, minHeight: 0 }}>
+        <Suspense
+          fallback={
+            <div
+              style={{
+                ...style,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: getMutedColor(theme),
+              }}
+            >
+              Loading viewer...
+            </div>
+          }
+        >
+          <Viewer src={src} fileName={fileName} height={height} theme={theme} style={style} />
+        </Suspense>
+      </div>
     </div>
+  );
+}
+
+function ToolbarButton({
+  label,
+  disabled,
+  onClick,
+  theme,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  theme: ViewerComponentProps["theme"];
+}) {
+  const isDark = theme === "dark";
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        border: `1px solid ${isDark ? "#334155" : "#cbd5e1"}`,
+        borderRadius: 8,
+        padding: "8px 10px",
+        backgroundColor: disabled ? (isDark ? "#111827" : "#f8fafc") : isDark ? "#1e293b" : "#ffffff",
+        color: disabled ? getMutedColor(theme) : isDark ? "#e2e8f0" : "#0f172a",
+        cursor: disabled ? "not-allowed" : "pointer",
+        fontSize: 13,
+      }}
+    >
+      {label}
+    </button>
   );
 }
 

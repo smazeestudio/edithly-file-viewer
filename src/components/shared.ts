@@ -19,6 +19,9 @@ export function getPanelStyle(theme: FileViewerTheme): CSSProperties {
   const isDark = theme === "dark";
 
   return {
+    display: "flex",
+    flexDirection: "column",
+    minHeight: 0,
     fontFamily:
       'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     backgroundColor: isDark ? "#0f172a" : "#ffffff",
