@@ -25,6 +25,10 @@ export function Example() {
 }
 ```
 
+## Local testing
+
+Use the isolated test workspace under [test](./test), which keeps demo and test tooling separate from the published package.
+
 ## Supported formats
 
 - PDF

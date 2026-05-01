@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { ViewerComponentProps } from "../../types";
 import { readFileAsText } from "../../utils/fetchFile";
+import { ErrorState } from "../ErrorState";
 import { getMutedColor } from "../shared";
 
 export function TextViewer({ src, style, theme }: ViewerComponentProps) {
@@ -29,7 +30,7 @@ export function TextViewer({ src, style, theme }: ViewerComponentProps) {
   }, [src]);
 
   if (error) {
-    return <ErrorState error={error} style={style} theme={theme} />;
+    return <ErrorState error={`Failed to load file: ${error}`} style={style} theme={theme} />;
   }
 
   return (
@@ -48,21 +49,5 @@ export function TextViewer({ src, style, theme }: ViewerComponentProps) {
     >
       {content}
     </pre>
-  );
-}
-
-function ErrorState({
-  error,
-  style,
-  theme,
-}: {
-  error: string;
-  style: ViewerComponentProps["style"];
-  theme: ViewerComponentProps["theme"];
-}) {
-  return (
-    <div style={{ ...style, padding: 16, color: getMutedColor(theme) }}>
-      Failed to load file: {error}
-    </div>
   );
 }

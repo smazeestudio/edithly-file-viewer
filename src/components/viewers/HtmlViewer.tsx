@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
 import type { ViewerComponentProps } from "../../types";
 import { readFileAsText } from "../../utils/fetchFile";
-import { getMutedColor } from "../shared";
+import { ErrorState } from "../ErrorState";
+import { SourceSurface } from "../SourceSurface";
+import { escapeHtml } from "../sourceTheme";
 
 export function HtmlViewer({ src, style, theme }: ViewerComponentProps) {
   const [content, setContent] = useState<string>("");
+  const [highlighted, setHighlighted] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"preview" | "source">("preview");
 
   useEffect(() => {
     let cancelled = false;
@@ -15,6 +19,7 @@ export function HtmlViewer({ src, style, theme }: ViewerComponentProps) {
         if (!cancelled) {
           setContent(value);
           setError(null);
+          setMode("preview");
         }
       })
       .catch((err: unknown) => {
@@ -28,19 +33,60 @@ export function HtmlViewer({ src, style, theme }: ViewerComponentProps) {
     };
   }, [src]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function highlightMarkup() {
+      const Prism = (await import("prismjs")).default;
+      await import("prismjs/components/prism-markup");
+
+      if (!cancelled) {
+        const grammar = Prism.languages.markup ?? Prism.languages.html;
+        setHighlighted(Prism.highlight(content, grammar, "markup"));
+      }
+    }
+
+    if (content) {
+      highlightMarkup().catch(() => {
+        if (!cancelled) {
+          setHighlighted(escapeHtml(content));
+        }
+      });
+    } else {
+      setHighlighted("");
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [content]);
+
   if (error) {
-    return <div style={{ ...style, padding: 16, color: getMutedColor(theme) }}>{error}</div>;
+    return <ErrorState error={error} style={style} theme={theme} />;
   }
 
   return (
-    <iframe
-      title="HTML preview"
-      sandbox="allow-same-origin"
-      srcDoc={content}
-      style={{
-        ...style,
-        width: "100%",
-      }}
+    <SourceSurface
+      style={style}
+      theme={theme}
+      mode={mode}
+      previewLabel="Preview"
+      sourceLabel="HTML"
+      onChangeMode={setMode}
+      source={content}
+      highlightedSource={highlighted}
+      preview={
+        <iframe
+          title="HTML preview"
+          sandbox="allow-same-origin"
+          srcDoc={content}
+          style={{
+            flex: 1,
+            width: "100%",
+            border: 0,
+          }}
+        />
+      }
     />
   );
 }

@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import type { ViewerComponentProps } from "../../types";
 import { readFileAsText } from "../../utils/fetchFile";
-import { getMutedColor } from "../shared";
+import { ErrorState } from "../ErrorState";
+import { SourceSurface } from "../SourceSurface";
 
 export function MarkdownViewer({ src, style, theme }: ViewerComponentProps) {
   const [content, setContent] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"preview" | "source">("preview");
 
   useEffect(() => {
     let cancelled = false;
@@ -16,6 +18,7 @@ export function MarkdownViewer({ src, style, theme }: ViewerComponentProps) {
         if (!cancelled) {
           setContent(value);
           setError(null);
+          setMode("preview");
         }
       })
       .catch((err: unknown) => {
@@ -30,12 +33,30 @@ export function MarkdownViewer({ src, style, theme }: ViewerComponentProps) {
   }, [src]);
 
   if (error) {
-    return <div style={{ ...style, padding: 16, color: getMutedColor(theme) }}>{error}</div>;
+    return <ErrorState error={error} style={style} theme={theme} />;
   }
 
   return (
-    <div style={{ ...style, padding: 24, lineHeight: 1.7 }}>
-      <ReactMarkdown>{content}</ReactMarkdown>
-    </div>
+    <SourceSurface
+      style={style}
+      theme={theme}
+      mode={mode}
+      previewLabel="Preview"
+      sourceLabel="Markdown"
+      onChangeMode={setMode}
+      source={content}
+      preview={
+        <div
+          style={{
+            flex: 1,
+            overflow: "auto",
+            padding: 24,
+            lineHeight: 1.7,
+          }}
+        >
+          <ReactMarkdown>{content}</ReactMarkdown>
+        </div>
+      }
+    />
   );
 }

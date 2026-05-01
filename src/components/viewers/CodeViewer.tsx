@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ViewerComponentProps } from "../../types";
 import { readFileAsText } from "../../utils/fetchFile";
-import { getMutedColor } from "../shared";
+import { ErrorState } from "../ErrorState";
+import { escapeHtml, getSourcePalette, getSourceThemeCss, splitSourceLines } from "../sourceTheme";
 
 function getLanguage(fileName: string): string {
   const ext = fileName.split(".").pop()?.toLowerCase() ?? "";
@@ -34,6 +35,7 @@ export function CodeViewer({ src, fileName, style, theme }: ViewerComponentProps
   const [highlighted, setHighlighted] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const language = useMemo(() => getLanguage(fileName), [fileName]);
+  const palette = getSourcePalette(theme);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,31 +106,45 @@ export function CodeViewer({ src, fileName, style, theme }: ViewerComponentProps
   }, [content, language]);
 
   if (error) {
-    return <div style={{ ...style, padding: 16, color: getMutedColor(theme) }}>{error}</div>;
+    return <ErrorState error={error} style={style} theme={theme} />;
   }
 
   return (
-    <pre
+    <div
       style={{
         ...style,
-        margin: 0,
-        padding: 16,
-        fontSize: 14,
-        lineHeight: 1.6,
-        fontFamily:
-          'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+        overflow: "auto",
+        backgroundColor: palette.bg,
       }}
     >
-      <code dangerouslySetInnerHTML={{ __html: highlighted || escapeHtml(content) }} />
-    </pre>
+      <style>{getSourceThemeCss(palette, "fv-code-viewer")}</style>
+      <pre
+        style={{
+          margin: 0,
+          padding: 20,
+          minHeight: "100%",
+          fontSize: 14,
+          lineHeight: 1.65,
+          backgroundColor: palette.bg,
+          color: palette.text,
+          fontFamily:
+            '"Cascadia Code", "Fira Code", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace',
+        }}
+      >
+        <code className={`fv-code-viewer language-${language}`}>
+          {splitSourceLines(highlighted || escapeHtml(content)).map((line, index) => (
+            <span className="fv-code-line" key={index}>
+              <span className="fv-code-line-number" aria-hidden="true">
+                {index + 1}
+              </span>
+              <span
+                className="fv-code-line-content"
+                dangerouslySetInnerHTML={{ __html: line || "&nbsp;" }}
+              />
+            </span>
+          ))}
+        </code>
+      </pre>
+    </div>
   );
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }

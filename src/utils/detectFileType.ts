@@ -28,6 +28,8 @@ export function detectFileType(fileName: string): FileKind {
 
   if (!ext) return "unknown";
   if (ext === "pdf") return "pdf";
+  if (ext === "docx") return "docx";
+  if (["ppt", "pptx"].includes(ext)) return "pptx";
   if (["txt", "log"].includes(ext)) return "txt";
   if (["html", "htm"].includes(ext)) return "html";
   if (["md", "markdown"].includes(ext)) return "md";

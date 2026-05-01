@@ -2,14 +2,19 @@ import { useEffect, useState } from "react";
 import Papa from "papaparse";
 import type { ViewerComponentProps } from "../../types";
 import { readFileAsText } from "../../utils/fetchFile";
-import { getMutedColor } from "../shared";
+import { ErrorState } from "../ErrorState";
+import { SourceSurface } from "../SourceSurface";
+import { escapeHtml } from "../sourceTheme";
 
 type CsvRow = Record<string, string>;
 
 export function CsvViewer({ src, style, theme }: ViewerComponentProps) {
+  const [content, setContent] = useState<string>("");
   const [rows, setRows] = useState<CsvRow[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
+  const [highlighted, setHighlighted] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<"preview" | "source">("preview");
 
   useEffect(() => {
     let cancelled = false;
@@ -26,9 +31,12 @@ export function CsvViewer({ src, style, theme }: ViewerComponentProps) {
         }
 
         if (!cancelled) {
+          setContent(value);
           setRows(result.data);
           setHeaders(result.meta.fields ?? []);
+          setHighlighted(highlightCsvSource(value));
           setError(null);
+          setMode("preview");
         }
       })
       .catch((err: unknown) => {
@@ -43,28 +51,38 @@ export function CsvViewer({ src, style, theme }: ViewerComponentProps) {
   }, [src]);
 
   if (error) {
-    return <div style={{ ...style, padding: 16, color: getMutedColor(theme) }}>{error}</div>;
+    return <ErrorState error={error} style={style} theme={theme} />;
   }
 
-  return <TableViewer headers={headers} rows={rows} style={style} theme={theme} />;
+  return (
+    <SourceSurface
+      style={style}
+      theme={theme}
+      mode={mode}
+      previewLabel="Preview"
+      sourceLabel="CSV"
+      onChangeMode={setMode}
+      source={content}
+      highlightedSource={highlighted}
+      preview={<TableViewer headers={headers} rows={rows} theme={theme} />}
+    />
+  );
 }
 
 function TableViewer({
   headers,
   rows,
-  style,
   theme,
 }: {
   headers: string[];
   rows: CsvRow[];
-  style: ViewerComponentProps["style"];
   theme: ViewerComponentProps["theme"];
 }) {
   const borderColor = theme === "dark" ? "#334155" : "#e2e8f0";
   const headerBg = theme === "dark" ? "#1e293b" : "#f8fafc";
 
   return (
-    <div style={style}>
+    <div style={{ flex: 1 }}>
       <div style={{ overflow: "auto", height: "100%" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
@@ -101,4 +119,42 @@ function TableViewer({
       </div>
     </div>
   );
+}
+
+function highlightCsvSource(value: string): string {
+  const parsed = Papa.parse<string[]>(value, {
+    skipEmptyLines: false,
+  });
+
+  if (parsed.errors.length > 0 || !parsed.data.length) {
+    return escapeHtml(value);
+  }
+
+  return parsed.data
+    .map((row, rowIndex) =>
+      row
+        .map((cell) => {
+          const normalized = cell.trim();
+
+          if (rowIndex === 0) {
+            return `<span class="token attr-name">${escapeHtml(cell)}</span>`;
+          }
+
+          if (/^-?\d+(\.\d+)?$/.test(normalized)) {
+            return `<span class="token number">${escapeHtml(cell)}</span>`;
+          }
+
+          if (/^(true|false)$/i.test(normalized)) {
+            return `<span class="token boolean">${escapeHtml(cell)}</span>`;
+          }
+
+          if (normalized.length === 0) {
+            return `<span class="token punctuation"></span>`;
+          }
+
+          return `<span class="token string">${escapeHtml(cell)}</span>`;
+        })
+        .join('<span class="token punctuation">,</span>'),
+    )
+    .join("\n");
 }

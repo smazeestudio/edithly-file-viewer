@@ -4,6 +4,8 @@ export type FileViewerTheme = "light" | "dark";
 
 export type FileKind =
   | "pdf"
+  | "docx"
+  | "pptx"
   | "txt"
   | "code"
   | "html"

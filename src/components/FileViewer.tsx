@@ -6,6 +6,12 @@ import { UnsupportedViewer } from "./UnsupportedViewer";
 import { getPanelStyle, getViewerStyle, getMutedColor } from "./shared";
 
 const PdfViewer = lazy(() => import("./viewers/PdfViewer").then((m) => ({ default: m.PdfViewer })));
+const DocxViewer = lazy(() =>
+  import("./viewers/DocxViewer").then((m) => ({ default: m.DocxViewer })),
+);
+const PptxViewer = lazy(() =>
+  import("./viewers/PptxViewer").then((m) => ({ default: m.PptxViewer })),
+);
 const TextViewer = lazy(() =>
   import("./viewers/TextViewer").then((m) => ({ default: m.TextViewer })),
 );
@@ -31,6 +37,8 @@ const ImageViewer = lazy(() =>
 
 const viewerMap: Record<FileKind, ComponentType<ViewerComponentProps>> = {
   pdf: PdfViewer,
+  docx: DocxViewer,
+  pptx: PptxViewer,
   txt: TextViewer,
   code: CodeViewer,
   html: HtmlViewer,
