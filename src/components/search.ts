@@ -62,7 +62,7 @@ export function createSearchMatches(
   query: string,
   theme: FileViewerTheme,
 ): HTMLElement[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const normalizedQuery = normalizeSearchText(query);
   if (!normalizedQuery) {
     return [];
   }
@@ -71,43 +71,82 @@ export function createSearchMatches(
 
   for (const root of roots) {
     const textNodes = collectTextNodes(root);
+    if (textNodes.length === 0) {
+      continue;
+    }
 
-    for (const textNode of textNodes) {
-      const sourceText = textNode.nodeValue ?? "";
-      const sourceLower = sourceText.toLocaleLowerCase();
-      let searchIndex = 0;
-      let matchIndex = sourceLower.indexOf(normalizedQuery, searchIndex);
+    const {
+      combinedText,
+      combinedLower,
+      combinedMap,
+    } = buildCombinedSearchText(textNodes);
 
+    if (!combinedText) {
+      continue;
+    }
+
+    const segmentsByNode = new Map<
+      number,
+      Array<{ start: number; end: number; order: number }>
+    >();
+    let matchOrder = 0;
+    let searchIndex = 0;
+
+    while (searchIndex < combinedLower.length) {
+      const matchIndex = combinedLower.indexOf(normalizedQuery, searchIndex);
       if (matchIndex === -1) {
-        continue;
+        break;
       }
 
-      const fragment = root.ownerDocument.createDocumentFragment();
+      collectSegmentsForMatch(
+        combinedMap,
+        matchIndex,
+        matchIndex + normalizedQuery.length,
+        matchOrder,
+        segmentsByNode,
+      );
+      matchOrder += 1;
+      searchIndex = matchIndex + normalizedQuery.length;
+    }
 
-      while (matchIndex !== -1) {
-        if (matchIndex > searchIndex) {
-          fragment.appendChild(
-            root.ownerDocument.createTextNode(sourceText.slice(searchIndex, matchIndex)),
-          );
+    if (segmentsByNode.size === 0) {
+      continue;
+    }
+
+    for (const [nodeIndex, rawSegments] of segmentsByNode.entries()) {
+      const node = textNodes[nodeIndex];
+      const text = node.nodeValue ?? "";
+      const segments = mergeNodeSegments(rawSegments);
+      const fragment = root.ownerDocument.createDocumentFragment();
+      let cursor = 0;
+
+      for (const segment of segments) {
+        if (segment.start > cursor) {
+          fragment.appendChild(root.ownerDocument.createTextNode(text.slice(cursor, segment.start)));
         }
 
         const match = root.ownerDocument.createElement("mark");
         match.dataset.fileViewerSearchMatch = "true";
-        match.textContent = sourceText.slice(matchIndex, matchIndex + normalizedQuery.length);
+        match.dataset.fileViewerSearchOrder = String(segment.order);
+        match.textContent = text.slice(segment.start, segment.end);
         applySearchMatchStyle(match, theme, false);
         fragment.appendChild(match);
-        matches.push(match);
-
-        searchIndex = matchIndex + normalizedQuery.length;
-        matchIndex = sourceLower.indexOf(normalizedQuery, searchIndex);
+        cursor = segment.end;
       }
 
-      if (searchIndex < sourceText.length) {
-        fragment.appendChild(root.ownerDocument.createTextNode(sourceText.slice(searchIndex)));
+      if (cursor < text.length) {
+        fragment.appendChild(root.ownerDocument.createTextNode(text.slice(cursor)));
       }
 
-      textNode.parentNode?.replaceChild(fragment, textNode);
+      node.parentNode?.replaceChild(fragment, node);
     }
+
+    const rootMatches = Array.from(root.querySelectorAll<HTMLElement>(SEARCH_MATCH_SELECTOR)).sort(
+      (left, right) =>
+        Number(left.dataset.fileViewerSearchOrder ?? "0") -
+        Number(right.dataset.fileViewerSearchOrder ?? "0"),
+    );
+    matches.push(...rootMatches);
   }
 
   return matches;
@@ -166,6 +205,152 @@ function collectTextNodes(root: HTMLElement): Text[] {
   }
 
   return textNodes;
+}
+
+function buildCombinedSearchText(textNodes: Text[]): {
+  combinedText: string;
+  combinedLower: string;
+  combinedMap: Array<{ nodeIndex: number; offset: number } | null>;
+} {
+  let combinedText = "";
+  const combinedMap: Array<{ nodeIndex: number; offset: number } | null> = [];
+
+  for (const [nodeIndex, textNode] of textNodes.entries()) {
+    const text = textNode.nodeValue ?? "";
+    if (!text) {
+      continue;
+    }
+
+    if (combinedText.length > 0 && needsWhitespaceBridge(combinedText, text)) {
+      combinedText += " ";
+      combinedMap.push(null);
+    }
+
+    for (let offset = 0; offset < text.length; offset += 1) {
+      combinedText += text[offset];
+      combinedMap.push({ nodeIndex, offset });
+    }
+  }
+
+  const combinedLower = normalizeSearchText(combinedText);
+  if (combinedLower === combinedText.toLocaleLowerCase()) {
+    return { combinedText, combinedLower, combinedMap };
+  }
+
+  const rebuiltMap: Array<{ nodeIndex: number; offset: number } | null> = [];
+  let normalizedText = "";
+  let pendingWhitespace = false;
+  let pendingWhitespaceRef: { nodeIndex: number; offset: number } | null = null;
+
+  for (let index = 0; index < combinedText.length; index += 1) {
+    const character = combinedText[index];
+    const ref = combinedMap[index];
+
+    if (/\s/.test(character)) {
+      pendingWhitespace = normalizedText.length > 0;
+      if (ref) {
+        pendingWhitespaceRef = ref;
+      }
+      continue;
+    }
+
+    if (pendingWhitespace) {
+      normalizedText += " ";
+      rebuiltMap.push(pendingWhitespaceRef);
+      pendingWhitespace = false;
+      pendingWhitespaceRef = null;
+    }
+
+    normalizedText += character;
+    rebuiltMap.push(ref);
+  }
+
+  return {
+    combinedText: normalizedText,
+    combinedLower: normalizedText.toLocaleLowerCase(),
+    combinedMap: rebuiltMap,
+  };
+}
+
+function collectSegmentsForMatch(
+  combinedMap: Array<{ nodeIndex: number; offset: number } | null>,
+  startIndex: number,
+  endIndex: number,
+  order: number,
+  segmentsByNode: Map<number, Array<{ start: number; end: number; order: number }>>,
+): void {
+  let currentNodeIndex: number | null = null;
+  let currentStart = -1;
+  let previousOffset = -1;
+
+  function flushCurrentSegment() {
+    if (currentNodeIndex === null || currentStart < 0) {
+      return;
+    }
+
+    const segments = segmentsByNode.get(currentNodeIndex) ?? [];
+    segments.push({
+      start: currentStart,
+      end: previousOffset + 1,
+      order,
+    });
+    segmentsByNode.set(currentNodeIndex, segments);
+    currentNodeIndex = null;
+    currentStart = -1;
+    previousOffset = -1;
+  }
+
+  for (let index = startIndex; index < endIndex; index += 1) {
+    const ref = combinedMap[index];
+    if (!ref) {
+      flushCurrentSegment();
+      continue;
+    }
+
+    if (
+      currentNodeIndex === ref.nodeIndex &&
+      previousOffset >= 0 &&
+      ref.offset === previousOffset + 1
+    ) {
+      previousOffset = ref.offset;
+      continue;
+    }
+
+    flushCurrentSegment();
+    currentNodeIndex = ref.nodeIndex;
+    currentStart = ref.offset;
+    previousOffset = ref.offset;
+  }
+
+  flushCurrentSegment();
+}
+
+function mergeNodeSegments(
+  segments: Array<{ start: number; end: number; order: number }>,
+): Array<{ start: number; end: number; order: number }> {
+  const sortedSegments = [...segments].sort((left, right) => left.start - right.start);
+  const merged: Array<{ start: number; end: number; order: number }> = [];
+
+  for (const segment of sortedSegments) {
+    const previous = merged[merged.length - 1];
+    if (previous && segment.start < previous.end) {
+      previous.end = Math.max(previous.end, segment.end);
+      continue;
+    }
+    merged.push({ ...segment });
+  }
+
+  return merged;
+}
+
+function normalizeSearchText(value: string): string {
+  return value.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+}
+
+function needsWhitespaceBridge(current: string, next: string): boolean {
+  const currentLast = current[current.length - 1];
+  const nextFirst = next[0];
+  return Boolean(currentLast && nextFirst && !/\s/.test(currentLast) && !/\s/.test(nextFirst));
 }
 
 function applySearchMatchStyle(
