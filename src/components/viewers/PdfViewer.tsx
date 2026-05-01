@@ -12,6 +12,7 @@ type PdfDocumentProxyLike = {
 
 type PdfPageProxyLike = {
   getViewport: (options: { scale: number }) => { width: number; height: number };
+  getTextContent: () => Promise<unknown>;
   render: (params: {
     canvasContext: CanvasRenderingContext2D;
     viewport: { width: number; height: number };
@@ -19,11 +20,28 @@ type PdfPageProxyLike = {
   }) => { promise: Promise<void> };
 };
 
+type PdfLibraryLike = {
+  version?: string;
+  GlobalWorkerOptions: { workerSrc: string };
+  getDocument: (options: { data: ArrayBuffer }) => { promise: Promise<unknown> };
+  TextLayer: new (options: {
+    textContentSource: unknown;
+    container: HTMLElement;
+    viewport: unknown;
+  }) => PdfTextLayerLike;
+};
+
+type PdfTextLayerLike = {
+  render: () => Promise<unknown>;
+  cancel?: () => void;
+};
+
 type ViewMode = "single" | "continuous" | "two-column";
 
 const pdfScale = 1.2;
 
 export function PdfViewer({ src, style, theme }: ViewerComponentProps) {
+  const [pdfLibrary, setPdfLibrary] = useState<PdfLibraryLike | null>(null);
   const [documentProxy, setDocumentProxy] = useState<PdfDocumentProxyLike | null>(null);
   const [pageCount, setPageCount] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -38,8 +56,8 @@ export function PdfViewer({ src, style, theme }: ViewerComponentProps) {
     let activeDocument: PdfDocumentProxyLike | null = null;
 
     async function loadPdf() {
-      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-      const version = (pdfjs as { version?: string }).version ?? "latest";
+      const pdfjs = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as PdfLibraryLike;
+      const version = pdfjs.version ?? "latest";
       pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${version}/legacy/build/pdf.worker.min.mjs`;
 
       const data = await readFileAsArrayBuffer(src);
@@ -47,6 +65,7 @@ export function PdfViewer({ src, style, theme }: ViewerComponentProps) {
       activeDocument = loadedDocument;
 
       if (!cancelled) {
+        setPdfLibrary(pdfjs);
         setDocumentProxy(loadedDocument);
         setPageCount(loadedDocument.numPages);
         setCurrentPage(1);
@@ -57,6 +76,7 @@ export function PdfViewer({ src, style, theme }: ViewerComponentProps) {
 
     loadPdf().catch((err: unknown) => {
       if (!cancelled) {
+        setPdfLibrary(null);
         setDocumentProxy(null);
         setPageCount(0);
         setError(err instanceof Error ? err.message : "Unable to load PDF.");
@@ -216,6 +236,7 @@ export function PdfViewer({ src, style, theme }: ViewerComponentProps) {
                 ref={(node) => {
                   pageRefs.current[pageNumber] = node;
                 }}
+                data-file-viewer-page-number={pageNumber}
                 style={{
                   display: "flex",
                   flexDirection: "column",
@@ -227,6 +248,7 @@ export function PdfViewer({ src, style, theme }: ViewerComponentProps) {
                   Page {pageNumber}
                 </div>
                 <PdfPageCanvas
+                  pdfLibrary={pdfLibrary}
                   documentProxy={documentProxy}
                   pageNumber={pageNumber}
                   theme={theme}
@@ -246,30 +268,40 @@ export function PdfViewer({ src, style, theme }: ViewerComponentProps) {
 }
 
 function PdfPageCanvas({
+  pdfLibrary,
   documentProxy,
   pageNumber,
   theme,
   onVisible,
 }: {
+  pdfLibrary: PdfLibraryLike | null;
   documentProxy: PdfDocumentProxyLike;
   pageNumber: number;
   theme: ViewerComponentProps["theme"];
   onVisible: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const textLayerRef = useRef<HTMLDivElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const [pageSize, setPageSize] = useState<{ width: number; height: number } | null>(null);
   const [renderError, setRenderError] = useState<string | null>(null);
   const isDark = theme === "dark";
 
   useEffect(() => {
     let cancelled = false;
+    let textLayerInstance: PdfTextLayerLike | null = null;
 
     async function renderPage() {
+      if (!pdfLibrary) {
+        return;
+      }
+
       const page = await documentProxy.getPage(pageNumber);
       const viewport = page.getViewport({ scale: pdfScale });
       const canvas = canvasRef.current;
+      const textLayerContainer = textLayerRef.current;
 
-      if (!canvas || cancelled) {
+      if (!canvas || !textLayerContainer || cancelled) {
         return;
       }
 
@@ -280,8 +312,17 @@ function PdfPageCanvas({
 
       canvas.width = viewport.width;
       canvas.height = viewport.height;
+      setPageSize({ width: viewport.width, height: viewport.height });
+      textLayerContainer.innerHTML = "";
 
       await page.render({ canvasContext: context, viewport, canvas }).promise;
+      const textContent = await page.getTextContent();
+      textLayerInstance = new pdfLibrary.TextLayer({
+        textContentSource: textContent,
+        container: textLayerContainer,
+        viewport,
+      });
+      await textLayerInstance.render();
 
       if (!cancelled) {
         setRenderError(null);
@@ -296,8 +337,9 @@ function PdfPageCanvas({
 
     return () => {
       cancelled = true;
+      textLayerInstance?.cancel?.();
     };
-  }, [documentProxy, pageNumber]);
+  }, [documentProxy, pageNumber, pdfLibrary]);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -347,20 +389,37 @@ function PdfPageCanvas({
         width: "100%",
         display: "flex",
         justifyContent: "center",
+        overflowX: "auto",
       }}
     >
-      <canvas
-        ref={canvasRef}
+      <div
         style={{
-          maxWidth: "100%",
-          height: "auto",
+          position: "relative",
+          width: pageSize?.width ?? 0,
+          minWidth: pageSize?.width ?? 0,
+          height: pageSize?.height ?? 0,
           backgroundColor: "#ffffff",
           borderRadius: 12,
+          overflow: "hidden",
           boxShadow: isDark
             ? "0 10px 30px rgba(15, 23, 42, 0.55)"
             : "0 8px 24px rgba(15, 23, 42, 0.08)",
         }}
-      />
+      >
+        <style>{getPdfTextLayerCss(theme)}</style>
+        <canvas
+          ref={canvasRef}
+          style={{
+            display: "block",
+            width: pageSize?.width ?? 0,
+            height: pageSize?.height ?? 0,
+          }}
+        />
+        <div
+          ref={textLayerRef}
+          className={`fv-pdf-text-layer ${theme === "dark" ? "dark" : "light"}`}
+        />
+      </div>
     </div>
   );
 }
@@ -444,4 +503,37 @@ function jumpToPage(
   const nextPage = Math.min(Math.max(1, Math.trunc(parsed)), Math.max(pageCount, 1));
   setCurrentPage(nextPage);
   setPageInput(String(nextPage));
+}
+
+function getPdfTextLayerCss(theme: ViewerComponentProps["theme"]): string {
+  const selectionBackground =
+    theme === "dark" ? "rgba(96, 165, 250, 0.35)" : "rgba(37, 99, 235, 0.2)";
+
+  return `
+    .fv-pdf-text-layer {
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+      line-height: 1;
+      opacity: 1;
+      z-index: 1;
+      forced-color-adjust: none;
+      text-size-adjust: none;
+      transform-origin: 0 0;
+    }
+
+    .fv-pdf-text-layer span,
+    .fv-pdf-text-layer br {
+      position: absolute;
+      white-space: pre;
+      color: transparent;
+      cursor: text;
+      transform-origin: 0 0;
+    }
+
+    .fv-pdf-text-layer::selection,
+    .fv-pdf-text-layer span::selection {
+      background: ${selectionBackground};
+    }
+  `;
 }

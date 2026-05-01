@@ -2,6 +2,14 @@ import type { CSSProperties } from "react";
 
 export type FileViewerTheme = "light" | "dark";
 
+export type TextSelectionPayload = {
+  file_name: string;
+  file_id?: string;
+  text: string;
+  page_number?: number;
+  line_number?: string;
+};
+
 export type FileKind =
   | "pdf"
   | "docx"
@@ -19,10 +27,13 @@ export type FileKind =
 export interface FileViewerProps {
   src: string | File;
   fileName: string;
+  fileId?: string;
   height?: string;
   theme?: FileViewerTheme;
+  onTextSelect?: (payload: TextSelectionPayload) => void;
 }
 
-export interface ViewerComponentProps extends Required<FileViewerProps> {
+export interface ViewerComponentProps
+  extends Required<Pick<FileViewerProps, "src" | "fileName" | "height" | "theme">> {
   style: CSSProperties;
 }

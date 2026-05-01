@@ -67,6 +67,7 @@ export function PptxViewer({ src, style, theme }: ViewerComponentProps) {
         setSlideInput(String(nextCurrent));
         if (count > 0) {
           nextPreviewer.renderSingleSlide(nextCurrent - 1);
+          annotateRenderedSlides(host, nextCurrent);
         }
       }
     }
@@ -86,11 +87,13 @@ export function PptxViewer({ src, style, theme }: ViewerComponentProps) {
 
   useEffect(() => {
     const previewer = previewerRef.current;
-    if (!previewer || slideCount === 0) {
+    const host = hostRef.current;
+    if (!previewer || !host || slideCount === 0) {
       return;
     }
 
     previewer.renderSingleSlide(currentSlide - 1);
+    annotateRenderedSlides(host, currentSlide);
   }, [currentSlide, slideCount]);
 
   useEffect(() => {
@@ -275,4 +278,11 @@ function getPptPreviewCss(theme: ViewerComponentProps["theme"]): string {
       transform-origin: top left !important;
     }
   `;
+}
+
+function annotateRenderedSlides(host: HTMLDivElement, pageNumber: number) {
+  const slides = host.querySelectorAll(".pptx-preview-slide-wrapper");
+  slides.forEach((slide) => {
+    slide.setAttribute("data-file-viewer-page-number", String(pageNumber));
+  });
 }

@@ -203,6 +203,7 @@ function InvalidJsonState({
               return (
                 <span
                   key={lineNumber}
+                  data-file-viewer-line-number={lineNumber}
                   style={{
                     display: "grid",
                     gridTemplateColumns: "auto 1fr",

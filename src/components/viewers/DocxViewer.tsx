@@ -19,7 +19,7 @@ export function DocxViewer({ src, style, theme }: ViewerComponentProps) {
       const result = await mammoth.convertToHtml({ arrayBuffer: buffer });
 
       if (!cancelled) {
-        setHtml(result.value);
+        setHtml(annotateDocxHtml(result.value));
         setMessages(result.messages.map((message) => message.message));
         setError(null);
       }
@@ -95,11 +95,61 @@ export function DocxViewer({ src, style, theme }: ViewerComponentProps) {
   );
 }
 
+function annotateDocxHtml(html: string): string {
+  if (typeof DOMParser === "undefined") {
+    return html;
+  }
+
+  const parser = new DOMParser();
+  const document = parser.parseFromString(html, "text/html");
+  const lineSelectors = [
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "p",
+    "li",
+    "blockquote",
+    "table",
+  ].join(",");
+
+  let lineNumber = 1;
+  document.body.querySelectorAll<HTMLElement>(lineSelectors).forEach((element) => {
+    element.classList.add("fv-docx-line");
+    element.setAttribute("data-file-viewer-line-number", String(lineNumber));
+    lineNumber += 1;
+  });
+
+  return document.body.innerHTML;
+}
+
 function getDocxDocumentCss(): string {
   return `
     .fv-docx-document {
       color: #202124;
       word-break: break-word;
+    }
+
+    .fv-docx-document .fv-docx-line {
+      position: relative;
+    }
+
+    .fv-docx-document .fv-docx-line::before {
+      content: attr(data-file-viewer-line-number);
+      position: absolute;
+      top: 0;
+      right: 100%;
+      width: 40px;
+      margin-right: 24px;
+      color: #9ca3af;
+      text-align: right;
+      font-size: 12px;
+      line-height: 1.6;
+      user-select: none;
+      font-family:
+        "Cascadia Code", "Fira Code", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
     }
 
     .fv-docx-document h1,

@@ -106,6 +106,7 @@ function SourceTextView({
             <span
               key={index}
               className={highlightedSource ? "fv-code-line" : undefined}
+              data-file-viewer-line-number={index + 1}
               style={
                 highlightedSource
                   ? undefined

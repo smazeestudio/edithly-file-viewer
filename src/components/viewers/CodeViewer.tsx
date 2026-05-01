@@ -133,7 +133,11 @@ export function CodeViewer({ src, fileName, style, theme }: ViewerComponentProps
       >
         <code className={`fv-code-viewer language-${language}`}>
           {splitSourceLines(highlighted || escapeHtml(content)).map((line, index) => (
-            <span className="fv-code-line" key={index}>
+            <span
+              className="fv-code-line"
+              key={index}
+              data-file-viewer-line-number={index + 1}
+            >
               <span className="fv-code-line-number" aria-hidden="true">
                 {index + 1}
               </span>

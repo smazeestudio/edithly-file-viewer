@@ -1,4 +1,4 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import type { ComponentType } from "react";
 import type { FileKind, FileViewerProps, ViewerComponentProps } from "../types";
 import { detectFileType } from "../utils/detectFileType";
@@ -53,15 +53,56 @@ const viewerMap: Record<FileKind, ComponentType<ViewerComponentProps>> = {
 export function FileViewer({
   src,
   fileName,
+  fileId,
   height = "800px",
   theme = "light",
+  onTextSelect,
 }: FileViewerProps) {
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const type = detectFileType(fileName);
   const style = getViewerStyle(theme, height);
   const Viewer = viewerMap[type] ?? UnsupportedViewer;
 
+  useEffect(() => {
+    if (!onTextSelect) {
+      return;
+    }
+
+    const emitTextSelection = onTextSelect;
+
+    function handleSelectionChange() {
+      const selection = window.getSelection();
+      const selectedText = selection?.toString().trim();
+      if (!selection || !selectedText || selection.rangeCount === 0) {
+        return;
+      }
+
+      const root = rootRef.current;
+      const anchorNode = selection.anchorNode;
+      if (!root || !anchorNode || !root.contains(anchorNode)) {
+        return;
+      }
+
+      const pageNumber = getSelectionPageNumber(anchorNode);
+      const lineNumber = getSelectionLineNumber(selection.getRangeAt(0));
+
+      emitTextSelection({
+        file_name: fileName,
+        file_id: fileId,
+        text: selectedText,
+        page_number: pageNumber,
+        line_number: lineNumber,
+      });
+    }
+
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
+  }, [fileId, fileName, onTextSelect]);
+
   return (
-    <div style={getPanelStyle(theme)}>
+    <div ref={rootRef} style={getPanelStyle(theme)}>
       <Suspense
         fallback={
           <div
@@ -81,4 +122,40 @@ export function FileViewer({
       </Suspense>
     </div>
   );
+}
+
+function getSelectionPageNumber(node: Node): number | undefined {
+  return getClosestNumericAttribute(node, "data-file-viewer-page-number");
+}
+
+function getSelectionLineNumber(range: Range): string | undefined {
+  const startLine = getClosestNumericAttribute(range.startContainer, "data-file-viewer-line-number");
+  const endLine = getClosestNumericAttribute(range.endContainer, "data-file-viewer-line-number");
+
+  if (!startLine && !endLine) {
+    return undefined;
+  }
+
+  if (!startLine) {
+    return String(endLine);
+  }
+
+  if (!endLine) {
+    return String(startLine);
+  }
+
+  const rangeStart = Math.min(startLine, endLine);
+  const rangeEnd = Math.max(startLine, endLine);
+  return rangeStart === rangeEnd ? String(rangeStart) : `${rangeStart}-${rangeEnd}`;
+}
+
+function getClosestNumericAttribute(node: Node, attributeName: string): number | undefined {
+  const element = node.nodeType === Node.ELEMENT_NODE ? (node as Element) : node.parentElement;
+  const value = element?.closest(`[${attributeName}]`)?.getAttribute(attributeName);
+  if (!value) {
+    return undefined;
+  }
+
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? numberValue : undefined;
 }
