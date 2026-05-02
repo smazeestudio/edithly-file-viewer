@@ -1,5 +1,6 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useDeferredValue, useEffect, useRef, useState } from "react";
 import type { ComponentType } from "react";
+import type { MutableRefObject } from "react";
 import type { FileKind, FileViewerProps, ViewerComponentProps } from "../types";
 import { detectFileType } from "../utils/detectFileType";
 import {
@@ -72,6 +73,9 @@ export function FileViewer({
   const [searchQuery, setSearchQuery] = useState("");
   const [matchCount, setMatchCount] = useState(0);
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const searchRootsRef = useRef<HTMLElement[]>([]);
+  const searchMatchesRef = useRef<HTMLElement[]>([]);
 
   useEffect(() => {
     if (!onTextSelect) {
@@ -115,6 +119,7 @@ export function FileViewer({
     setSearchQuery("");
     setMatchCount(0);
     setActiveMatchIndex(0);
+    clearCurrentSearchHighlights(searchRootsRef, searchMatchesRef);
   }, [fileId, fileName, src]);
 
   useEffect(() => {
@@ -124,6 +129,7 @@ export function FileViewer({
     }
     const searchContainer = container;
 
+    const normalizedQuery = deferredSearchQuery.trim();
     let disposed = false;
     let animationFrame = 0;
     let observer: MutationObserver | null = null;
@@ -135,50 +141,11 @@ export function FileViewer({
       }
     }
 
-    function scheduleSync() {
-      observer?.disconnect();
-      clearIFrameListeners();
-      cancelAnimationFrame(animationFrame);
-      animationFrame = window.requestAnimationFrame(() => {
-        if (disposed) {
-          return;
-        }
-
-        syncSearch();
-        observeMutations();
-      });
-    }
-
-    function observeMutations() {
-      observer?.disconnect();
-      clearIFrameListeners();
-
-      observer = new MutationObserver(() => {
-        scheduleSync();
-      });
-      observer.observe(searchContainer, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-      });
-
-      for (const iframe of searchContainer.querySelectorAll("iframe")) {
-        const onLoad = () => {
-          scheduleSync();
-        };
-
-        iframe.addEventListener("load", onLoad);
-        iframeCleanups.push(() => {
-          iframe.removeEventListener("load", onLoad);
-        });
-      }
-    }
-
-    function syncSearch() {
+    function rebuildMatches() {
       const roots = collectSearchRoots(searchContainer);
-      clearSearchMatches(roots);
+      searchRootsRef.current = roots;
+      clearCurrentSearchHighlights(searchRootsRef, searchMatchesRef);
 
-      const normalizedQuery = searchQuery.trim();
       if (!normalizedQuery) {
         if (matchCount !== 0) {
           setMatchCount(0);
@@ -190,8 +157,9 @@ export function FileViewer({
       }
 
       const matches = createSearchMatches(roots, normalizedQuery, theme);
-      const resolvedIndex = matches.length === 0 ? 0 : Math.min(activeMatchIndex, matches.length - 1);
+      searchMatchesRef.current = matches;
 
+      const resolvedIndex = matches.length === 0 ? 0 : Math.min(activeMatchIndex, matches.length - 1);
       if (matchCount !== matches.length) {
         setMatchCount(matches.length);
       }
@@ -199,11 +167,53 @@ export function FileViewer({
         setActiveMatchIndex(resolvedIndex);
       }
       if (matches.length > 0) {
-        setActiveSearchMatch(matches, resolvedIndex, theme);
+        setActiveSearchMatch(roots, matches, resolvedIndex, theme);
       }
     }
 
-    syncSearch();
+    function scheduleRebuild() {
+      observer?.disconnect();
+      clearIFrameListeners();
+      cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(() => {
+        if (disposed) {
+          return;
+        }
+
+        rebuildMatches();
+        observeMutations();
+      });
+    }
+
+    function observeMutations() {
+      if (!normalizedQuery) {
+        return;
+      }
+
+      observer?.disconnect();
+      clearIFrameListeners();
+      observer = new MutationObserver(() => {
+        scheduleRebuild();
+      });
+      observer.observe(searchContainer, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+
+      for (const iframe of searchContainer.querySelectorAll("iframe")) {
+        const onLoad = () => {
+          scheduleRebuild();
+        };
+
+        iframe.addEventListener("load", onLoad);
+        iframeCleanups.push(() => {
+          iframe.removeEventListener("load", onLoad);
+        });
+      }
+    }
+
+    rebuildMatches();
     observeMutations();
 
     return () => {
@@ -211,9 +221,23 @@ export function FileViewer({
       cancelAnimationFrame(animationFrame);
       observer?.disconnect();
       clearIFrameListeners();
-      clearSearchMatches(collectSearchRoots(searchContainer));
+      clearCurrentSearchHighlights(searchRootsRef, searchMatchesRef);
     };
-  }, [activeMatchIndex, fileId, fileName, matchCount, searchQuery, src, theme]);
+  }, [deferredSearchQuery, fileId, fileName, src, theme]);
+
+  useEffect(() => {
+    if (searchMatchesRef.current.length === 0) {
+      return;
+    }
+
+    const resolvedIndex = Math.min(activeMatchIndex, Math.max(searchMatchesRef.current.length - 1, 0));
+    if (resolvedIndex !== activeMatchIndex) {
+      setActiveMatchIndex(resolvedIndex);
+      return;
+    }
+
+    setActiveSearchMatch(searchRootsRef.current, searchMatchesRef.current, resolvedIndex, theme);
+  }, [activeMatchIndex, theme]);
 
   const hasSearchQuery = searchQuery.trim().length > 0;
   const canNavigateMatches = hasSearchQuery && matchCount > 0;
@@ -392,4 +416,15 @@ function getClosestNumericAttribute(node: Node, attributeName: string): number |
 
   const numberValue = Number(value);
   return Number.isFinite(numberValue) ? numberValue : undefined;
+}
+
+function clearCurrentSearchHighlights(
+  searchRootsRef: MutableRefObject<HTMLElement[]>,
+  searchMatchesRef: MutableRefObject<HTMLElement[]>,
+): void {
+  if (searchRootsRef.current.length > 0) {
+    clearSearchMatches(searchRootsRef.current);
+  }
+  searchRootsRef.current = [];
+  searchMatchesRef.current = [];
 }

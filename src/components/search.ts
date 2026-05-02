@@ -141,11 +141,22 @@ export function createSearchMatches(
       node.parentNode?.replaceChild(fragment, node);
     }
 
-    const rootMatches = Array.from(root.querySelectorAll<HTMLElement>(SEARCH_MATCH_SELECTOR)).sort(
-      (left, right) =>
-        Number(left.dataset.fileViewerSearchOrder ?? "0") -
-        Number(right.dataset.fileViewerSearchOrder ?? "0"),
-    );
+    const rootMatches = Array.from(root.querySelectorAll<HTMLElement>(SEARCH_MATCH_SELECTOR))
+      .sort(
+        (left, right) =>
+          Number(left.dataset.fileViewerSearchOrder ?? "0") -
+          Number(right.dataset.fileViewerSearchOrder ?? "0"),
+      )
+      .filter((match, index, items) => {
+        if (index === 0) {
+          return true;
+        }
+
+        return (
+          match.dataset.fileViewerSearchOrder !==
+          items[index - 1]?.dataset.fileViewerSearchOrder
+        );
+      });
     matches.push(...rootMatches);
   }
 
@@ -153,12 +164,18 @@ export function createSearchMatches(
 }
 
 export function setActiveSearchMatch(
+  roots: HTMLElement[],
   matches: HTMLElement[],
   activeIndex: number,
   theme: FileViewerTheme,
 ): void {
-  for (const [index, match] of matches.entries()) {
-    applySearchMatchStyle(match, theme, index === activeIndex);
+  const activeOrder = matches[activeIndex]?.dataset.fileViewerSearchOrder ?? null;
+
+  for (const root of roots) {
+    const marks = Array.from(root.querySelectorAll<HTMLElement>(SEARCH_MATCH_SELECTOR));
+    for (const mark of marks) {
+      applySearchMatchStyle(mark, theme, mark.dataset.fileViewerSearchOrder === activeOrder);
+    }
   }
 
   const activeMatch = matches[activeIndex];
