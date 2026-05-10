@@ -26,6 +26,7 @@ export function App() {
   const [selected, setSelected] = useState<DemoOption>(demoFiles[0]);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [searchText, setSearchText] = useState("");
   const [selectionPayload, setSelectionPayload] = useState<TextSelectionPayload | null>(null);
 
   const viewerProps = useMemo(() => {
@@ -114,12 +115,26 @@ export function App() {
             />
           </label>
 
+          <label style={fieldStyle}>
+            <span>Programmatic search</span>
+            <input
+              type="text"
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              placeholder="Type text to highlight"
+              style={inputStyle}
+            />
+          </label>
+
           <button
             type="button"
-            onClick={() => setUploadedFile(null)}
+            onClick={() => {
+              setUploadedFile(null);
+              setSearchText("");
+            }}
             style={{ ...buttonStyle, alignSelf: "end", height: 44 }}
           >
-            Use sample again
+            Reset demo
           </button>
         </div>
 
@@ -167,6 +182,7 @@ export function App() {
           fileId={viewerProps.fileId}
           height="70vh"
           theme={theme}
+          searchMode={searchText.trim() ? { text: searchText } : undefined}
           onTextSelect={setSelectionPayload}
         />
       </div>

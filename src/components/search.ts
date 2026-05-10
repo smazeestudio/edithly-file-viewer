@@ -62,7 +62,7 @@ export function createSearchMatches(
   query: string,
   theme: FileViewerTheme,
 ): HTMLElement[] {
-  const normalizedQuery = normalizeSearchText(query);
+  const normalizedQuery = normalizeSearchQuery(query);
   if (!normalizedQuery) {
     return [];
   }
@@ -197,7 +197,7 @@ function collectTextNodes(root: HTMLElement): Text[] {
           return NodeFilter.FILTER_REJECT;
         }
 
-        if (!node.nodeValue || !node.nodeValue.trim()) {
+        if (!node.nodeValue) {
           return NodeFilter.FILTER_REJECT;
         }
 
@@ -238,7 +238,8 @@ function buildCombinedSearchText(textNodes: Text[]): {
       continue;
     }
 
-    if (combinedText.length > 0 && needsWhitespaceBridge(combinedText, text)) {
+    const previousNode = nodeIndex > 0 ? textNodes[nodeIndex - 1] : null;
+    if (previousNode && shouldInsertSearchBoundary(previousNode, textNode)) {
       combinedText += " ";
       combinedMap.push(null);
     }
@@ -249,7 +250,7 @@ function buildCombinedSearchText(textNodes: Text[]): {
     }
   }
 
-  const combinedLower = normalizeSearchText(combinedText);
+  const combinedLower = normalizeSearchDocumentText(combinedText);
   if (combinedLower === combinedText.toLocaleLowerCase()) {
     return { combinedText, combinedLower, combinedMap };
   }
@@ -360,14 +361,46 @@ function mergeNodeSegments(
   return merged;
 }
 
-function normalizeSearchText(value: string): string {
+function normalizeSearchDocumentText(value: string): string {
   return value.replace(/\s+/g, " ").trim().toLocaleLowerCase();
 }
 
-function needsWhitespaceBridge(current: string, next: string): boolean {
-  const currentLast = current[current.length - 1];
-  const nextFirst = next[0];
-  return Boolean(currentLast && nextFirst && !/\s/.test(currentLast) && !/\s/.test(nextFirst));
+function normalizeSearchQuery(value: string): string {
+  return normalizeSearchDocumentText(decodeSearchEscapes(value));
+}
+
+function decodeSearchEscapes(value: string): string {
+  return value
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\r")
+    .replace(/\\t/g, "\t");
+}
+
+function shouldInsertSearchBoundary(previousNode: Text, nextNode: Text): boolean {
+  const previousLine = getSearchBoundaryKey(previousNode);
+  const nextLine = getSearchBoundaryKey(nextNode);
+
+  return Boolean(previousLine && nextLine && previousLine !== nextLine);
+}
+
+function getSearchBoundaryKey(node: Text): string | null {
+  const element = node.parentElement;
+  if (!element) {
+    return null;
+  }
+
+  const lineContainer = element.closest<HTMLElement>("[data-file-viewer-line-number]");
+  if (lineContainer) {
+    return `line:${lineContainer.getAttribute("data-file-viewer-line-number") ?? ""}`;
+  }
+
+  const pageContainer = element.closest<HTMLElement>("[data-file-viewer-page-number]");
+  if (pageContainer) {
+    return `page:${pageContainer.getAttribute("data-file-viewer-page-number") ?? ""}`;
+  }
+
+  return null;
 }
 
 function applySearchMatchStyle(

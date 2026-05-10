@@ -40,15 +40,16 @@ type ViewMode = "single" | "continuous" | "two-column";
 
 const pdfScale = 1.2;
 
-export function PdfViewer({ src, style, theme }: ViewerComponentProps) {
+export function PdfViewer({ src, style, theme, searchQuery }: ViewerComponentProps) {
   const [pdfLibrary, setPdfLibrary] = useState<PdfLibraryLike | null>(null);
   const [documentProxy, setDocumentProxy] = useState<PdfDocumentProxyLike | null>(null);
   const [pageCount, setPageCount] = useState<number>(0);
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageInput, setPageInput] = useState<string>("1");
-  const [viewMode, setViewMode] = useState<ViewMode>("continuous");
+  const [viewMode, setViewMode] = useState<ViewMode>("single");
   const [error, setError] = useState<string | null>(null);
   const pageRefs = useRef<Record<number, HTMLDivElement | null>>({});
+  const pageTextCacheRef = useRef<Map<number, string>>(new Map());
   const isDark = theme === "dark";
 
   useEffect(() => {
@@ -70,6 +71,7 @@ export function PdfViewer({ src, style, theme }: ViewerComponentProps) {
         setPageCount(loadedDocument.numPages);
         setCurrentPage(1);
         setPageInput("1");
+        pageTextCacheRef.current = new Map();
         setError(null);
       }
     }
@@ -92,6 +94,47 @@ export function PdfViewer({ src, style, theme }: ViewerComponentProps) {
   useEffect(() => {
     setPageInput(String(currentPage));
   }, [currentPage]);
+
+  useEffect(() => {
+    const normalizedQuery = normalizePdfSearchText(searchQuery ?? "");
+    if (!documentProxy || !normalizedQuery) {
+      return;
+    }
+    const activeDocument = documentProxy;
+
+    let cancelled = false;
+
+    async function goToFirstMatchingPage() {
+      const currentPageText = await getPdfPageSearchText(
+        activeDocument,
+        currentPage,
+        pageTextCacheRef.current,
+      );
+      if (currentPageText.includes(normalizedQuery)) {
+        return;
+      }
+
+      for (let pageNumber = 1; pageNumber <= activeDocument.numPages; pageNumber += 1) {
+        const pageText = await getPdfPageSearchText(activeDocument, pageNumber, pageTextCacheRef.current);
+        if (!pageText.includes(normalizedQuery)) {
+          continue;
+        }
+
+        if (!cancelled) {
+          setCurrentPage((current) => (current === pageNumber ? current : pageNumber));
+        }
+        break;
+      }
+    }
+
+    goToFirstMatchingPage().catch(() => {
+      // Keep the current page when search-based page discovery fails.
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPage, documentProxy, searchQuery]);
 
   useEffect(() => {
     if (viewMode === "single") {
@@ -537,3 +580,32 @@ function getPdfTextLayerCss(theme: ViewerComponentProps["theme"]): string {
     }
   `;
 }
+
+async function getPdfPageSearchText(
+  documentProxy: PdfDocumentProxyLike,
+  pageNumber: number,
+  cache: Map<number, string>,
+): Promise<string> {
+  const cached = cache.get(pageNumber);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const page = await documentProxy.getPage(pageNumber);
+  const textContent = (await page.getTextContent()) as PdfTextContentLike;
+  const text = normalizePdfSearchText(
+    textContent.items
+      .map((item) => item.str ?? "")
+      .join(" "),
+  );
+  cache.set(pageNumber, text);
+  return text;
+}
+
+function normalizePdfSearchText(value: string): string {
+  return value.toLocaleLowerCase().replace(/\s+/g, " ").trim();
+}
+
+type PdfTextContentLike = {
+  items: Array<{ str?: string }>;
+};

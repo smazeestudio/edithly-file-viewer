@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import { parse, printParseErrorCode } from "jsonc-parser";
 import type { ParseError } from "jsonc-parser";
 import type { ViewerComponentProps } from "../../types";
@@ -79,11 +80,8 @@ export function JsonViewer({ src, style, theme }: ViewerComponentProps) {
       }}
     >
       {parsed !== null ? (
-        <JsonTree
+        <JsonTreeView
           value={parsed}
-          path="root"
-          depth={0}
-          isLast
           collapsedPaths={collapsedPaths}
           onToggle={(path) => {
             setCollapsedPaths((current) => {
@@ -101,6 +99,30 @@ export function JsonViewer({ src, style, theme }: ViewerComponentProps) {
       ) : null}
     </div>
   );
+}
+
+function JsonTreeView({
+  value,
+  collapsedPaths,
+  onToggle,
+  theme,
+}: {
+  value: JsonValue;
+  collapsedPaths: Set<string>;
+  onToggle: (path: string) => void;
+  theme: JsonTreeTheme;
+}) {
+  const lines = buildJsonLines({
+    value,
+    path: "root",
+    depth: 0,
+    isLast: true,
+    collapsedPaths,
+    onToggle,
+    theme,
+  });
+
+  return <>{lines.map((line, index) => <JsonLine key={index + 1} lineNumber={index + 1} theme={theme}>{line}</JsonLine>)}</>;
 }
 
 function InvalidJsonState({
@@ -293,20 +315,44 @@ function JsonTree({
   theme: JsonTreeTheme;
   propertyName?: string;
 }) {
+  return <>{buildJsonLines({ value, path, depth, isLast, collapsedPaths, onToggle, theme, propertyName })}</>;
+}
+
+function buildJsonLines({
+  value,
+  path,
+  depth,
+  isLast,
+  collapsedPaths,
+  onToggle,
+  theme,
+  propertyName,
+}: {
+  value: JsonValue;
+  path: string;
+  depth: number;
+  isLast: boolean;
+  collapsedPaths: Set<string>;
+  onToggle: (path: string) => void;
+  theme: JsonTreeTheme;
+  propertyName?: string;
+}): ReactNode[] {
   const indent = depth * 20;
   const isCollapsible = typeof value === "object" && value !== null;
   const isCollapsed = isCollapsible && collapsedPaths.has(path);
   const comma = isLast ? "" : ",";
 
   if (!isCollapsible) {
-    return (
-      <div style={{ paddingLeft: indent, whiteSpace: "pre" }}>
-        {propertyName ? <span style={{ color: theme.key }}>"{propertyName}"</span> : null}
-        {propertyName ? <span style={{ color: theme.punctuation }}>: </span> : null}
-        <JsonPrimitiveValue value={value} theme={theme} />
-        <span style={{ color: theme.punctuation }}>{comma}</span>
-      </div>
-    );
+    return [
+      (
+        <div style={{ paddingLeft: indent, whiteSpace: "pre" }}>
+          {propertyName ? <span style={{ color: theme.key }}>"{propertyName}"</span> : null}
+          {propertyName ? <span style={{ color: theme.punctuation }}>: </span> : null}
+          <JsonPrimitiveValue value={value} theme={theme} />
+          <span style={{ color: theme.punctuation }}>{comma}</span>
+        </div>
+      ),
+    ];
   }
 
   const isArray = Array.isArray(value);
@@ -321,49 +367,97 @@ function JsonTree({
     : `${entries.length} key${entries.length === 1 ? "" : "s"}`;
 
   if (isCollapsed) {
-    return (
-      <div style={{ paddingLeft: indent, whiteSpace: "pre" }}>
-        <ToggleButton collapsed onClick={() => onToggle(path)} theme={theme} />
-        {propertyName ? <span style={{ color: theme.key }}>"{propertyName}"</span> : null}
-        {propertyName ? <span style={{ color: theme.punctuation }}>: </span> : null}
-        <span style={{ color: theme.punctuation }}>{openBracket}</span>
-        <span style={{ color: theme.comment, fontStyle: "italic" }}> {collapsedSummary} </span>
-        <span style={{ color: theme.punctuation }}>{closeBracket}{comma}</span>
-      </div>
-    );
+    return [
+      (
+        <div style={{ paddingLeft: indent, whiteSpace: "pre" }}>
+          <ToggleButton collapsed onClick={() => onToggle(path)} theme={theme} />
+          {propertyName ? <span style={{ color: theme.key }}>"{propertyName}"</span> : null}
+          {propertyName ? <span style={{ color: theme.punctuation }}>: </span> : null}
+          <span style={{ color: theme.punctuation, userSelect: "none" }}>{openBracket}</span>
+          <span
+            style={{ color: theme.comment, fontStyle: "italic", userSelect: "none" }}
+            aria-hidden="true"
+          >
+            {" "}
+            {collapsedSummary}
+            {" "}
+          </span>
+          <span style={{ color: theme.punctuation, userSelect: "none" }}>{closeBracket}{comma}</span>
+        </div>
+      ),
+    ];
   }
 
-  return (
-    <div>
+  const lines: ReactNode[] = [
+    (
       <div style={{ paddingLeft: indent, whiteSpace: "pre" }}>
         <ToggleButton collapsed={false} onClick={() => onToggle(path)} theme={theme} />
         {propertyName ? <span style={{ color: theme.key }}>"{propertyName}"</span> : null}
         {propertyName ? <span style={{ color: theme.punctuation }}>: </span> : null}
         <span style={{ color: theme.punctuation }}>{openBracket}</span>
       </div>
+    ),
+  ];
 
-      {entries.length === 0 ? null : (
-        <div>
-          {entries.map(([entryKey, entryValue], index) => (
-            <JsonTree
-              key={`${path}.${entryKey}`}
-              value={entryValue}
-              path={`${path}.${entryKey}`}
-              depth={depth + 1}
-              isLast={index === entries.length - 1}
-              collapsedPaths={collapsedPaths}
-              onToggle={onToggle}
-              theme={theme}
-              propertyName={isArray ? undefined : entryKey}
-            />
-          ))}
-        </div>
-      )}
+  entries.forEach(([entryKey, entryValue], index) => {
+    lines.push(
+      ...buildJsonLines({
+        value: entryValue,
+        path: `${path}.${entryKey}`,
+        depth: depth + 1,
+        isLast: index === entries.length - 1,
+        collapsedPaths,
+        onToggle,
+        theme,
+        propertyName: isArray ? undefined : entryKey,
+      }),
+    );
+  });
 
-      <div style={{ paddingLeft: indent, whiteSpace: "pre" }}>
-        <span style={{ display: "inline-block", width: 20 }} />
-        <span style={{ color: theme.punctuation }}>{closeBracket}{comma}</span>
-      </div>
+  lines.push(
+    <div style={{ paddingLeft: indent, whiteSpace: "pre" }}>
+      <span style={{ display: "inline-block", width: 20 }} />
+      <span style={{ color: theme.punctuation }}>{closeBracket}{comma}</span>
+    </div>,
+  );
+
+  return lines;
+}
+
+function JsonLine({
+  lineNumber,
+  theme,
+  children,
+}: {
+  lineNumber: number;
+  theme: JsonTreeTheme;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      data-file-viewer-line-number={lineNumber}
+      style={{
+        display: "grid",
+        gridTemplateColumns: "auto 1fr",
+        columnGap: 16,
+      }}
+    >
+      <span
+        aria-hidden="true"
+        style={{
+          position: "sticky",
+          left: 0,
+          minWidth: "2ch",
+          paddingRight: 4,
+          textAlign: "right",
+          userSelect: "none",
+          color: theme.lineNumber,
+          backgroundColor: theme.background,
+        }}
+      >
+        {lineNumber}
+      </span>
+      <span>{children}</span>
     </div>
   );
 }
@@ -428,6 +522,7 @@ function ToggleButton({
 type JsonTreeTheme = {
   background: string;
   text: string;
+  lineNumber: string;
   key: string;
   string: string;
   number: string;
@@ -445,6 +540,7 @@ function getJsonTreeTheme(theme: ViewerComponentProps["theme"]): JsonTreeTheme {
     return {
       background: "#111827",
       text: "#d4d4d4",
+      lineNumber: "#6b7280",
       key: "#9cdcfe",
       string: "#ce9178",
       number: "#b5cea8",
@@ -461,6 +557,7 @@ function getJsonTreeTheme(theme: ViewerComponentProps["theme"]): JsonTreeTheme {
   return {
     background: "#ffffff",
     text: "#24292f",
+    lineNumber: "#8c959f",
     key: "#0550ae",
     string: "#0a3069",
     number: "#0550ae",

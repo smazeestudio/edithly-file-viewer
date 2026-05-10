@@ -63,19 +63,23 @@ export function FileViewer({
   fileId,
   height = "800px",
   theme = "light",
+  searchMode,
   onTextSelect,
 }: FileViewerProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const contentRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const type = detectFileType(fileName);
   const style = getViewerStyle(theme, height);
   const Viewer = viewerMap[type] ?? UnsupportedViewer;
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [matchCount, setMatchCount] = useState(0);
   const [activeMatchIndex, setActiveMatchIndex] = useState(0);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const searchRootsRef = useRef<HTMLElement[]>([]);
   const searchMatchesRef = useRef<HTMLElement[]>([]);
+  const lastSelectionSignatureRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!onTextSelect) {
@@ -88,17 +92,43 @@ export function FileViewer({
       const selection = window.getSelection();
       const selectedText = selection?.toString().trim();
       if (!selection || !selectedText || selection.rangeCount === 0) {
+        lastSelectionSignatureRef.current = null;
         return;
       }
 
       const root = rootRef.current;
       const anchorNode = selection.anchorNode;
-      if (!root || !anchorNode || !root.contains(anchorNode)) {
+      const focusNode = selection.focusNode;
+      const range = selection.getRangeAt(0);
+      const commonAncestorNode = range.commonAncestorContainer;
+
+      if (
+        !root ||
+        !anchorNode ||
+        !focusNode ||
+        !root.contains(anchorNode) ||
+        !root.contains(focusNode) ||
+        !root.contains(commonAncestorNode)
+      ) {
+        lastSelectionSignatureRef.current = null;
         return;
       }
 
       const pageNumber = getSelectionPageNumber(anchorNode);
-      const lineNumber = getSelectionLineNumber(selection.getRangeAt(0));
+      const lineNumber = getSelectionLineNumber(range);
+      const signature = JSON.stringify({
+        file_name: fileName,
+        file_id: fileId,
+        text: selectedText,
+        page_number: pageNumber,
+        line_number: lineNumber,
+      });
+
+      if (lastSelectionSignatureRef.current === signature) {
+        return;
+      }
+
+      lastSelectionSignatureRef.current = signature;
 
       emitTextSelection({
         file_name: fileName,
@@ -116,11 +146,39 @@ export function FileViewer({
   }, [fileId, fileName, onTextSelect]);
 
   useEffect(() => {
+    lastSelectionSignatureRef.current = null;
     setSearchQuery("");
     setMatchCount(0);
     setActiveMatchIndex(0);
+    setIsSearchOpen(false);
     clearCurrentSearchHighlights(searchRootsRef, searchMatchesRef);
   }, [fileId, fileName, src]);
+
+  useEffect(() => {
+    if (searchMode === undefined) {
+      return;
+    }
+
+    const nextSearchText = searchMode.text.trim();
+    if (!nextSearchText) {
+      setSearchQuery("");
+      setMatchCount(0);
+      setActiveMatchIndex(0);
+      return;
+    }
+
+    setSearchQuery(nextSearchText);
+    setActiveMatchIndex(0);
+  }, [searchMode?.text]);
+
+  useEffect(() => {
+    if (!isSearchOpen) {
+      return;
+    }
+
+    searchInputRef.current?.focus();
+    searchInputRef.current?.select();
+  }, [isSearchOpen]);
 
   useEffect(() => {
     const container = contentRef.current;
@@ -243,88 +301,124 @@ export function FileViewer({
   const canNavigateMatches = hasSearchQuery && matchCount > 0;
 
   return (
-    <div ref={rootRef} style={getPanelStyle(theme)}>
-      <div
-        data-file-viewer-search-ignore="true"
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: 12,
-          padding: "12px 16px",
-          borderBottom: `1px solid ${theme === "dark" ? "#334155" : "#e2e8f0"}`,
-          backgroundColor: theme === "dark" ? "#0f172a" : "#ffffff",
-        }}
-      >
-        <label
+    <div
+      ref={rootRef}
+      tabIndex={0}
+      style={getPanelStyle(theme)}
+      onMouseDownCapture={() => {
+        rootRef.current?.focus();
+      }}
+      onKeyDown={(event) => {
+        if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
+          event.preventDefault();
+          setIsSearchOpen(true);
+          return;
+        }
+
+        if (event.key === "Escape" && isSearchOpen) {
+          event.preventDefault();
+          setIsSearchOpen(false);
+          setSearchQuery("");
+          setMatchCount(0);
+          setActiveMatchIndex(0);
+        }
+      }}
+    >
+      {isSearchOpen ? (
+        <div
+          data-file-viewer-search-ignore="true"
           style={{
             display: "flex",
+            flexWrap: "wrap",
             alignItems: "center",
-            gap: 8,
-            flex: "1 1 280px",
-            minWidth: 220,
-            fontSize: 13,
-            color: getMutedColor(theme),
+            gap: 12,
+            padding: "12px 16px",
+            borderBottom: `1px solid ${theme === "dark" ? "#334155" : "#e2e8f0"}`,
+            backgroundColor: theme === "dark" ? "#0f172a" : "#ffffff",
           }}
         >
-          Search
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(event) => {
-              setSearchQuery(event.target.value);
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flex: "1 1 280px",
+              minWidth: 220,
+              fontSize: 13,
+              color: getMutedColor(theme),
+            }}
+          >
+            Search
+            <input
+              ref={searchInputRef}
+              type="search"
+              value={searchQuery}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setActiveMatchIndex(0);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && matchCount > 0) {
+                  event.preventDefault();
+                  setActiveMatchIndex((current) => {
+                    if (event.shiftKey) {
+                      return (current - 1 + matchCount) % matchCount;
+                    }
+                    return (current + 1) % matchCount;
+                  });
+                }
+              }}
+              placeholder="Search this file"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                border: `1px solid ${theme === "dark" ? "#334155" : "#cbd5e1"}`,
+                borderRadius: 8,
+                padding: "8px 10px",
+                backgroundColor: theme === "dark" ? "#111827" : "#ffffff",
+                color: theme === "dark" ? "#e2e8f0" : "#0f172a",
+              }}
+            />
+          </label>
+
+          <div
+            style={{
+              minWidth: 92,
+              textAlign: "right",
+              fontSize: 13,
+              color: getMutedColor(theme),
+            }}
+          >
+            {hasSearchQuery ? `${matchCount === 0 ? 0 : activeMatchIndex + 1} / ${matchCount}` : "0 / 0"}
+          </div>
+
+          <ToolbarButton
+            label="Up"
+            disabled={!canNavigateMatches}
+            onClick={() =>
+              setActiveMatchIndex((current) => (current - 1 + matchCount) % matchCount)
+            }
+            theme={theme}
+          />
+          <ToolbarButton
+            label="Down"
+            disabled={!canNavigateMatches}
+            onClick={() => setActiveMatchIndex((current) => (current + 1) % matchCount)}
+            theme={theme}
+          />
+          <ToolbarButton
+            label="Close"
+            disabled={false}
+            onClick={() => {
+              setIsSearchOpen(false);
+              setSearchQuery("");
+              setMatchCount(0);
               setActiveMatchIndex(0);
             }}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && matchCount > 0) {
-                event.preventDefault();
-                setActiveMatchIndex((current) => {
-                  if (event.shiftKey) {
-                    return (current - 1 + matchCount) % matchCount;
-                  }
-                  return (current + 1) % matchCount;
-                });
-              }
-            }}
-            placeholder="Search this file"
-            style={{
-              flex: 1,
-              minWidth: 0,
-              border: `1px solid ${theme === "dark" ? "#334155" : "#cbd5e1"}`,
-              borderRadius: 8,
-              padding: "8px 10px",
-              backgroundColor: theme === "dark" ? "#111827" : "#ffffff",
-              color: theme === "dark" ? "#e2e8f0" : "#0f172a",
-            }}
+            theme={theme}
           />
-        </label>
-
-        <div
-          style={{
-            minWidth: 92,
-            textAlign: "right",
-            fontSize: 13,
-            color: getMutedColor(theme),
-          }}
-        >
-          {hasSearchQuery ? `${matchCount === 0 ? 0 : activeMatchIndex + 1} / ${matchCount}` : "0 / 0"}
         </div>
-
-        <ToolbarButton
-          label="Up"
-          disabled={!canNavigateMatches}
-          onClick={() =>
-            setActiveMatchIndex((current) => (current - 1 + matchCount) % matchCount)
-          }
-          theme={theme}
-        />
-        <ToolbarButton
-          label="Down"
-          disabled={!canNavigateMatches}
-          onClick={() => setActiveMatchIndex((current) => (current + 1) % matchCount)}
-          theme={theme}
-        />
-      </div>
+      ) : null}
 
       <div ref={contentRef} style={{ flex: 1, minHeight: 0 }}>
         <Suspense
@@ -342,7 +436,14 @@ export function FileViewer({
             </div>
           }
         >
-          <Viewer src={src} fileName={fileName} height={height} theme={theme} style={style} />
+          <Viewer
+            src={src}
+            fileName={fileName}
+            height={height}
+            theme={theme}
+            searchQuery={deferredSearchQuery.trim()}
+            style={style}
+          />
         </Suspense>
       </div>
     </div>

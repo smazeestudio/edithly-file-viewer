@@ -9,7 +9,8 @@ The package is built for browser-based preview workflows where you want one entr
 - Single `FileViewer` component API
 - Supports remote URLs and local `File` objects
 - Lazy-loads heavy viewers by file type
-- Built-in search toolbar for searchable viewer content
+- Search UI opened with `Ctrl+F` / `Cmd+F`
+- Optional programmatic search via `searchMode`
 - Emits text-selection metadata through `onTextSelect`
 - Light and dark themes
 - TypeScript types included
@@ -92,6 +93,10 @@ export function UploadPreview() {
 ```tsx
 type FileViewerTheme = "light" | "dark";
 
+type FileViewerSearchMode = {
+  text: string;
+};
+
 type TextSelectionPayload = {
   file_name: string;
   file_id?: string;
@@ -106,6 +111,7 @@ type FileViewerProps = {
   fileId?: string;
   height?: string;
   theme?: FileViewerTheme;
+  searchMode?: FileViewerSearchMode;
   onTextSelect?: (payload: TextSelectionPayload) => void;
 };
 ```
@@ -119,6 +125,7 @@ type FileViewerProps = {
 | `fileId` | `string` | no | Passed back in selection events |
 | `height` | `string` | no | Defaults to `"800px"` |
 | `theme` | `"light" \| "dark"` | no | Defaults to `"light"` |
+| `searchMode` | `{ text: string }` | no | Opens search, applies the text, and jumps to the first match |
 | `onTextSelect` | `(payload) => void` | no | Fired when text is selected inside supported viewers |
 
 ## Exports
@@ -128,6 +135,7 @@ import {
   FileViewer,
   detectFileType,
   type FileViewerProps,
+  type FileViewerSearchMode,
   type FileViewerTheme,
   type FileKind,
   type TextSelectionPayload,
@@ -136,7 +144,7 @@ import {
 
 ## Viewer behavior
 
-- PDF viewer supports single-page, continuous, and two-column reading modes.
+- PDF viewer supports single-page, continuous, and two-column reading modes, and defaults to single-page mode.
 - HTML, Markdown, and CSV viewers provide preview/source-style workflows.
 - JSON files render as a tree, and invalid JSON shows parser errors with line context.
 - Code files use Prism-based syntax highlighting with line numbers.
@@ -145,7 +153,19 @@ import {
 
 ## Search and text selection
 
-`FileViewer` includes a search bar above the content area. Search highlights matches inside the rendered viewer content where the DOM is searchable.
+`FileViewer` keeps the search UI hidden until the user presses `Ctrl+F` or `Cmd+F` while the viewer is focused. Search highlights matches inside the rendered viewer content where the DOM is searchable.
+
+You can also drive search from the parent component:
+
+```tsx
+<FileViewer
+  src={file}
+  fileName={file.name}
+  searchMode={{ text: "invoice total" }}
+/>
+```
+
+When `searchMode` is provided, the viewer highlights matches and scrolls to the first result without opening the search bar. The visible search UI still only appears through `Ctrl+F` / `Cmd+F`. For PDFs, the viewer keeps the user’s selected PDF view mode and moves to the first matching page.
 
 If you provide `onTextSelect`, the component emits a payload like:
 

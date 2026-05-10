@@ -1,15 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ViewerComponentProps } from "../../types";
 import { readFileAsText } from "../../utils/fetchFile";
 import { ErrorState } from "../ErrorState";
 import { SourceSurface } from "../SourceSurface";
 import { escapeHtml } from "../sourceTheme";
 
-export function HtmlViewer({ src, style, theme }: ViewerComponentProps) {
+export function HtmlViewer({ src, style, theme, searchQuery }: ViewerComponentProps) {
   const [content, setContent] = useState<string>("");
   const [highlighted, setHighlighted] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"preview" | "source">("preview");
+  const manualModeRef = useRef<"preview" | "source">("preview");
 
   useEffect(() => {
     let cancelled = false;
@@ -19,7 +20,9 @@ export function HtmlViewer({ src, style, theme }: ViewerComponentProps) {
         if (!cancelled) {
           setContent(value);
           setError(null);
-          setMode("preview");
+          const nextMode = searchQuery?.trim() ? "source" : "preview";
+          setMode(nextMode);
+          manualModeRef.current = nextMode;
         }
       })
       .catch((err: unknown) => {
@@ -61,6 +64,15 @@ export function HtmlViewer({ src, style, theme }: ViewerComponentProps) {
     };
   }, [content]);
 
+  useEffect(() => {
+    if (searchQuery?.trim()) {
+      setMode("source");
+      return;
+    }
+
+    setMode(manualModeRef.current);
+  }, [searchQuery]);
+
   if (error) {
     return <ErrorState error={error} style={style} theme={theme} />;
   }
@@ -72,7 +84,10 @@ export function HtmlViewer({ src, style, theme }: ViewerComponentProps) {
       mode={mode}
       previewLabel="Preview"
       sourceLabel="HTML"
-      onChangeMode={setMode}
+      onChangeMode={(nextMode) => {
+        manualModeRef.current = nextMode;
+        setMode(nextMode);
+      }}
       source={content}
       highlightedSource={highlighted}
       preview={

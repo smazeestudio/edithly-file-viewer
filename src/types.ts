@@ -10,6 +10,10 @@ export type TextSelectionPayload = {
   line_number?: string;
 };
 
+export type FileViewerSearchMode = {
+  text: string;
+};
+
 export type FileKind =
   | "pdf"
   | "docx"
@@ -30,10 +34,12 @@ export interface FileViewerProps {
   fileId?: string;
   height?: string;
   theme?: FileViewerTheme;
+  searchMode?: FileViewerSearchMode;
   onTextSelect?: (payload: TextSelectionPayload) => void;
 }
 
 export interface ViewerComponentProps
   extends Required<Pick<FileViewerProps, "src" | "fileName" | "height" | "theme">> {
+  searchQuery?: string;
   style: CSSProperties;
 }
