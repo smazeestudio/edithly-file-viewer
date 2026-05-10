@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { FileViewer } from "@edithly/file-viewer";
-import type { TextSelectionPayload } from "@edithly/file-viewer";
+import { FileViewer } from "@smazeeapps/file-viewer";
+import type { TextSelectionPayload } from "@smazeeapps/file-viewer";
 
 type DemoOption = {
   label: string;

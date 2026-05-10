@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectFileType } from "@edithly/file-viewer";
+import { detectFileType } from "@smazeeapps/file-viewer";
 
 describe("detectFileType", () => {
   it("detects the supported core file types", () => {

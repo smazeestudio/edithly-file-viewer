@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { FileViewer } from "@edithly/file-viewer";
+import { FileViewer } from "@smazeeapps/file-viewer";
 
 const fetchMock = vi.fn<typeof fetch>();
 globalThis.fetch = fetchMock;

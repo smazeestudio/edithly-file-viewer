@@ -1,4 +1,4 @@
-# `@edithly/file-viewer`
+# `@smazeeapps/file-viewer`
 
 React file viewer for rendering common document, text, code, and image formats in the browser with a single component.
 
@@ -36,13 +36,13 @@ Unknown extensions fall back to an unsupported-file state instead of throwing.
 ## Install
 
 ```bash
-npm install @edithly/file-viewer react react-dom
+npm install @smazeeapps/file-viewer react react-dom
 ```
 
 ## Basic usage
 
 ```tsx
-import { FileViewer } from "@edithly/file-viewer";
+import { FileViewer } from "@smazeeapps/file-viewer";
 
 export function Example() {
   return (
@@ -60,7 +60,7 @@ export function Example() {
 
 ```tsx
 import { useState } from "react";
-import { FileViewer } from "@edithly/file-viewer";
+import { FileViewer } from "@smazeeapps/file-viewer";
 
 export function UploadPreview() {
   const [file, setFile] = useState<File | null>(null);
@@ -139,7 +139,7 @@ import {
   type FileViewerTheme,
   type FileKind,
   type TextSelectionPayload,
-} from "@edithly/file-viewer";
+} from "@smazeeapps/file-viewer";
 ```
 
 ## Viewer behavior
