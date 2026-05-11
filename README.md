@@ -213,6 +213,22 @@ Useful example scripts:
 - PDF rendering depends on `pdfjs-dist` and configures its worker at runtime.
 - Remote file URLs must be fetchable by the browser running your app.
 
+## Changelog
+
+### 1.0.2 (2026-05-09)
+
+- Added this changelog section to the README.
+- Improved `FileViewer` and PDF viewer layout: clearer height handling and overflow behavior for embedded previews.
+
+### 1.0.1
+
+- Published under the scoped name `@smazeeapps/file-viewer` (rebrand from `@edithly/file-viewer`).
+- Updated README, example app, and tests to use the new package name and install path.
+
+### 1.0.0
+
+- Initial public release: `FileViewer` with lazy-loaded format viewers, search (`Ctrl+F` / `Cmd+F` and `searchMode`), `onTextSelect`, and light/dark themes.
+
 ## License
 
 MIT
