@@ -304,4 +304,25 @@ describe("FileViewer", () => {
     expect(await screen.findByText(/"feature": "viewer"/)).toBeInTheDocument();
     expect(await screen.findByText(/"enabled": true/)).toBeInTheDocument();
   });
+
+  it("applies the configured height to the outer shell so content can scroll inside it", async () => {
+    fetchMock.mockResolvedValue(
+      new Response("hello from txt", {
+        status: 200,
+      }),
+    );
+
+    const { container } = render(
+      <FileViewer src="https://example.com/file.txt" fileName="file.txt" height="240px" />,
+    );
+
+    await screen.findByText("hello from txt");
+
+    const shell = container.firstElementChild as HTMLElement;
+    const viewerSurface = shell.querySelector("pre") as HTMLElement;
+
+    expect(shell.style.height).toBe("240px");
+    expect(shell.style.overflow).toBe("hidden");
+    expect(viewerSurface.style.height).toBe("100%");
+  });
 });

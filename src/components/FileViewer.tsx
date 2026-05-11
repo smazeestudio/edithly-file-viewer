@@ -304,7 +304,7 @@ export function FileViewer({
     <div
       ref={rootRef}
       tabIndex={0}
-      style={getPanelStyle(theme)}
+      style={getPanelStyle(theme, height)}
       onMouseDownCapture={() => {
         rootRef.current?.focus();
       }}

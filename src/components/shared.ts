@@ -5,7 +5,8 @@ export function getViewerStyle(theme: FileViewerTheme, height: string): CSSPrope
   const isDark = theme === "dark";
 
   return {
-    height,
+    height: "100%",
+    minHeight: 0,
     overflow: "auto",
     backgroundColor: isDark ? "#0f172a" : "#ffffff",
     color: isDark ? "#e2e8f0" : "#0f172a",
@@ -15,13 +16,15 @@ export function getViewerStyle(theme: FileViewerTheme, height: string): CSSPrope
   };
 }
 
-export function getPanelStyle(theme: FileViewerTheme): CSSProperties {
+export function getPanelStyle(theme: FileViewerTheme, height: string): CSSProperties {
   const isDark = theme === "dark";
 
   return {
     display: "flex",
     flexDirection: "column",
+    height,
     minHeight: 0,
+    overflow: "hidden",
     fontFamily:
       'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     backgroundColor: isDark ? "#0f172a" : "#ffffff",

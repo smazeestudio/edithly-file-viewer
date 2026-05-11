@@ -164,6 +164,7 @@ export function PdfViewer({ src, style, theme, searchQuery }: ViewerComponentPro
         ...style,
         display: "flex",
         flexDirection: "column",
+        minHeight: 0,
         overflow: "hidden",
       }}
     >
@@ -257,6 +258,7 @@ export function PdfViewer({ src, style, theme, searchQuery }: ViewerComponentPro
       <div
         style={{
           flex: 1,
+          minHeight: 0,
           overflow: "auto",
           padding: 16,
           backgroundColor: isDark ? "#0b1220" : "#f8fafc",
