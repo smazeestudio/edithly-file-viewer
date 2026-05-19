@@ -1,6 +1,6 @@
 {
   "name": "@smazeeapps/file-viewer",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Flexible React file viewer for rendering PDFs, Office documents, Markdown, CSV, code, and more in the browser.",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
