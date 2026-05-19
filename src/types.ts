@@ -26,6 +26,9 @@ export type FileKind =
   | "excel"
   | "json"
   | "image"
+  | "video"
+  | "url"
+  | "youtube"
   | "unknown";
 
 export interface FileViewerProps {

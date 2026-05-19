@@ -22,8 +22,27 @@ const codeExtensions = new Set([
 ]);
 
 const imageExtensions = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"]);
+const videoExtensions = new Set(["mp4", "webm", "ogg", "mov", "avi", "mkv", "m4v", "ogv"]);
+
+const youtubeHostnames = new Set([
+  "youtube.com",
+  "www.youtube.com",
+  "youtu.be",
+  "www.youtu.be",
+  "m.youtube.com",
+]);
 
 export function detectFileType(fileName: string): FileKind {
+  if (fileName.startsWith("http://") || fileName.startsWith("https://")) {
+    try {
+      const { hostname } = new URL(fileName);
+      if (youtubeHostnames.has(hostname)) return "youtube";
+    } catch {
+      // not a valid URL — fall through
+    }
+    return "url";
+  }
+
   const ext = fileName.split(".").pop()?.toLowerCase();
 
   if (!ext) return "unknown";
@@ -37,6 +56,7 @@ export function detectFileType(fileName: string): FileKind {
   if (["xls", "xlsx"].includes(ext)) return "excel";
   if (ext === "json") return "json";
   if (imageExtensions.has(ext)) return "image";
+  if (videoExtensions.has(ext)) return "video";
   if (codeExtensions.has(ext)) return "code";
   return "unknown";
 }

@@ -11,7 +11,11 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@smazeeapps/file-viewer": ["../src/index.ts"]
+    }
   },
-  "include": ["src", "tests", "vite.config.ts", "vitest.setup.ts"]
+  "include": ["src", "tests", "vite.config.ts", "vitest.setup.ts", "../src/types"]
 }

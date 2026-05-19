@@ -41,6 +41,15 @@ const JsonViewer = lazy(() =>
 const ImageViewer = lazy(() =>
   import("./viewers/ImageViewer").then((m) => ({ default: m.ImageViewer })),
 );
+const VideoViewer = lazy(() =>
+  import("./viewers/VideoViewer").then((m) => ({ default: m.VideoViewer })),
+);
+const UrlViewer = lazy(() =>
+  import("./viewers/UrlViewer").then((m) => ({ default: m.UrlViewer })),
+);
+const YouTubeViewer = lazy(() =>
+  import("./viewers/YouTubeViewer").then((m) => ({ default: m.YouTubeViewer })),
+);
 
 const viewerMap: Record<FileKind, ComponentType<ViewerComponentProps>> = {
   pdf: PdfViewer,
@@ -54,6 +63,9 @@ const viewerMap: Record<FileKind, ComponentType<ViewerComponentProps>> = {
   excel: ExcelViewer,
   json: JsonViewer,
   image: ImageViewer,
+  video: VideoViewer,
+  url: UrlViewer,
+  youtube: YouTubeViewer,
   unknown: UnsupportedViewer,
 };
 
@@ -139,9 +151,69 @@ export function FileViewer({
       });
     }
 
+    function handleIframeSelectionChange(iframeWindow: Window) {
+      const selection = iframeWindow.getSelection();
+      const selectedText = selection?.toString().trim();
+      if (!selectedText) {
+        lastSelectionSignatureRef.current = null;
+        return;
+      }
+      const signature = JSON.stringify({ file_name: fileName, file_id: fileId, text: selectedText });
+      if (lastSelectionSignatureRef.current === signature) return;
+      lastSelectionSignatureRef.current = signature;
+      emitTextSelection({ file_name: fileName, file_id: fileId, text: selectedText });
+    }
+
+    const cleanups: Array<() => void> = [];
+    const attachedDocs = new WeakSet<Document>();
+    const seenIframes = new WeakSet<HTMLIFrameElement>();
+
+    function tryAttachToDoc(iframe: HTMLIFrameElement) {
+      try {
+        const doc = iframe.contentDocument;
+        const win = iframe.contentWindow;
+        if (!doc || !win || attachedDocs.has(doc)) return;
+        attachedDocs.add(doc);
+        const handler = () => handleIframeSelectionChange(win);
+        doc.addEventListener("selectionchange", handler);
+        cleanups.push(() => {
+          try { doc.removeEventListener("selectionchange", handler); } catch { /* cross-origin */ }
+        });
+      } catch { /* cross-origin — access blocked by browser */ }
+    }
+
+    function watchIframe(iframe: HTMLIFrameElement) {
+      const onLoad = () => tryAttachToDoc(iframe);
+      iframe.addEventListener("load", onLoad);
+      cleanups.push(() => iframe.removeEventListener("load", onLoad));
+      tryAttachToDoc(iframe);
+    }
+
+    function scanIframes() {
+      const root = contentRef.current;
+      if (!root) return;
+      for (const iframe of root.querySelectorAll<HTMLIFrameElement>("iframe")) {
+        if (!seenIframes.has(iframe)) {
+          seenIframes.add(iframe);
+          watchIframe(iframe);
+        }
+      }
+    }
+
+    scanIframes();
+
+    const iframeObserver = new MutationObserver(scanIframes);
+    const contentRoot = contentRef.current;
+    if (contentRoot) {
+      iframeObserver.observe(contentRoot, { childList: true, subtree: true });
+    }
+    cleanups.push(() => iframeObserver.disconnect());
+
     document.addEventListener("selectionchange", handleSelectionChange);
+    cleanups.push(() => document.removeEventListener("selectionchange", handleSelectionChange));
+
     return () => {
-      document.removeEventListener("selectionchange", handleSelectionChange);
+      for (const fn of cleanups) fn();
     };
   }, [fileId, fileName, onTextSelect]);
 

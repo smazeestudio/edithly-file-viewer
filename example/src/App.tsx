@@ -8,6 +8,10 @@ type DemoOption = {
   src: string;
 };
 
+const YOUTUBE_SAMPLE = "https://www.youtube.com/watch?v=LXb3EKWsInQ";
+const URL_SAMPLE = "https://example.com";
+const VIDEO_SAMPLE_SRC = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+
 const demoFiles: DemoOption[] = [
   { label: "Markdown", fileName: "example.md", src: "/samples/example.md" },
   { label: "Text", fileName: "server.log", src: "/samples/server.log" },
@@ -19,15 +23,30 @@ const demoFiles: DemoOption[] = [
   { label: "Broken JSON", fileName: "broken.json", src: "/samples/broken.json" },
   { label: "DOCX", fileName: "proposal.docx", src: "/samples/proposal.docx" },
   { label: "PPTX", fileName: "deck.pptx", src: "/samples/deck.pptx" },
-  { label: "Image", fileName: "sample.svg", src: "/samples/sample.svg" }
+  { label: "Image", fileName: "sample.svg", src: "/samples/sample.svg" },
+  { label: "Video", fileName: "BigBuckBunny.mp4", src: VIDEO_SAMPLE_SRC },
+  { label: "YouTube", fileName: YOUTUBE_SAMPLE, src: YOUTUBE_SAMPLE },
+  { label: "URL", fileName: URL_SAMPLE, src: URL_SAMPLE },
 ];
 
 export function App() {
   const [selected, setSelected] = useState<DemoOption>(demoFiles[0]);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [urlInput, setUrlInput] = useState("");
+  const [activeUrl, setActiveUrl] = useState<string | null>(null);
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const [searchText, setSearchText] = useState("");
   const [selectionPayload, setSelectionPayload] = useState<TextSelectionPayload | null>(null);
+
+  function commitUrl() {
+    const trimmed = urlInput.trim();
+    if (!trimmed) return;
+    const withScheme = trimmed.startsWith("http://") || trimmed.startsWith("https://")
+      ? trimmed
+      : `https://${trimmed}`;
+    setActiveUrl(withScheme);
+    setUploadedFile(null);
+  }
 
   const viewerProps = useMemo(() => {
     if (uploadedFile) {
@@ -35,6 +54,16 @@ export function App() {
         src: uploadedFile,
         fileName: uploadedFile.name,
         fileId: `upload:${uploadedFile.name}`,
+        label: uploadedFile.name,
+      };
+    }
+
+    if (activeUrl) {
+      return {
+        src: activeUrl,
+        fileName: activeUrl,
+        fileId: `url:${activeUrl}`,
+        label: activeUrl,
       };
     }
 
@@ -42,8 +71,9 @@ export function App() {
       src: selected.src,
       fileName: selected.fileName,
       fileId: `sample:${selected.fileName}`,
+      label: selected.label,
     };
-  }, [selected, uploadedFile]);
+  }, [selected, uploadedFile, activeUrl]);
 
   useEffect(() => {
     setSelectionPayload(null);
@@ -107,6 +137,23 @@ export function App() {
           </label>
 
           <label style={fieldStyle}>
+            <span>Load URL</span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                type="text"
+                value={urlInput}
+                onChange={(event) => setUrlInput(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter") commitUrl(); }}
+                placeholder="https://example.com"
+                style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+              />
+              <button type="button" onClick={commitUrl} style={{ ...buttonStyle, padding: "10px 14px", whiteSpace: "nowrap" }}>
+                Load
+              </button>
+            </div>
+          </label>
+
+          <label style={fieldStyle}>
             <span>Upload local file</span>
             <input
               type="file"
@@ -130,6 +177,8 @@ export function App() {
             type="button"
             onClick={() => {
               setUploadedFile(null);
+              setUrlInput("");
+              setActiveUrl(null);
               setSearchText("");
             }}
             style={{ ...buttonStyle, alignSelf: "end", height: 44 }}
@@ -139,7 +188,7 @@ export function App() {
         </div>
 
         <div style={{ marginBottom: 12, opacity: 0.8 }}>
-          Now viewing: <strong>{viewerProps.fileName}</strong>
+          Now viewing: <strong>{viewerProps.label}</strong>
         </div>
 
         <div
